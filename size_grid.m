@@ -16,12 +16,13 @@ classdef size_grid
         
         function a = to_array(obj)
             % Get the column vector format of the grid.
+            % numel(obj) must equal 1.
             a = linspace(obj.lowBound, obj.highBound, obj.nPoints)';
         end
         
         function ret = interval(obj)
             % Get the grid interval in um
-            ret = (obj.highBound - obj.lowBound) / (obj.nPoints - 1);
+            ret = ([obj.highBound] - [obj.lowBound]) ./ ([obj.nPoints] - 1);
         end
     end
 end

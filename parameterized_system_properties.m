@@ -3,7 +3,7 @@ classdef parameterized_system_properties < system_properties
         %% Solubility definition
         % Polynomial to calculate solubility in kg/kg. The first element is
         % the coefficient of zero-order temperature term.
-        solubilityPoly = [4.564e-3; 3.032e-5; 8.437e-6; 0];
+        solubilityPoly = [4.564e-3; 3.032e-5; 8.437e-6];
         
         %% Kinetics definition
         % Primary nucleation
@@ -36,14 +36,12 @@ classdef parameterized_system_properties < system_properties
     
     methods
         function obj = parameterized_system_properties()
-            obj.kinetics = @obj.kinetics_fun;
-            obj.solubility = @obj.solubility_fun;
             obj.sizeGrids = size_grid(0, 999, 999);
         end
     end
     
-    methods (Access = private)
-        function [GD, Bp, Bs] = kinetics_fun(obj, svar)
+    methods
+        function [GD, Bp, Bs] = kinetics(obj, svar)
             R = 8.3145;
             sigma = svar.sigma;
             vf = svar.vf;
@@ -82,7 +80,7 @@ classdef parameterized_system_properties < system_properties
                 Bs = 0;
             end
         end
-        function cStar = solubility_fun(obj, T)
+        function cStar = solubility(obj, T)
             poly = obj.solubilityPoly;
             Ts = (ones(size(poly)) * T) .^ ((0:numel(poly)-1)');
             cStar = sum(Ts .* poly);

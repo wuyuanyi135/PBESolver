@@ -13,14 +13,16 @@ classdef system_properties
         densityRatio = 1.54
     end
     
-    properties
+    methods
         % Function to calculate solubility kg solid/kg solvent by passing
         % in temperature in degree C
-        solubility
+        function cStar = solubility_fun(obj, T)
+        end
         
         % Function to calculate kinetics by passing in the run-time state
         % object
-        kinetics
+        function [GD, Bp, Bs] = kinetics(obj, svar)
+        end
     end
 end
 
