@@ -4,6 +4,7 @@ states.conc = conc;
 grid = props.sizeGrids.to_array();
 states.moment3 = 0;
 if initCsd == 0
+    coder.varsize('csd');
     csd = zeros(size(grid));
     states.csd = csd;
     return;

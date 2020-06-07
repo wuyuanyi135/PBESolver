@@ -48,8 +48,6 @@ classdef test_hrfvm_solver < matlab.unittest.TestCase
         function test_polymorphism(testCase)
             props1 = parameterized_system_properties();
             props2 = parameterized_system_properties();
-            props2.pnKp = 1000000;
-            props2.snKb = 1e7;
             props2.solubilityPoly = [6.222e-3; -1.165e-4; 7.644e-6];
             props = [props1, props2]; % TODO: props must be col vec!
             
@@ -57,8 +55,8 @@ classdef test_hrfvm_solver < matlab.unittest.TestCase
             options.earlyStopThreshold = 0;
             
             ic = [
-                make_states(props1.solubility(60), 0, props1);
-                make_states(nan, 0, props2);
+                make_states(props1.solubility(60), 0, props1),...
+                make_states(nan, 0, props2)
             ];
         
             in = make_inputs(25);

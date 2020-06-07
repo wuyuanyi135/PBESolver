@@ -1,19 +1,26 @@
-classdef hrfvm_solver < pbe_solver
+classdef hrfvm_solver < pbe_solver %#codegen
+    methods
+        function obj = hrfvm_solver(options, props)
+            obj = obj@pbe_solver(options, props);
+        end
+    end
     methods
         function nextState = step(obj, currentState, inputs, cfl, tSpan)
+            % TODO size dependent GD is not allowed!
             if isempty(currentState)
-                currentState = obj.prevStates;
+                st = obj.prevStates;
                 stateful = true;
             else
+                st = currentState;
                 stateful = false;
             end
             
             props = obj.props;
             nProps = numel(props);
-            assert(numel(currentState) == nProps);
+            assert(numel(st) == nProps);
             
             tNow = 0;
-            s = currentState;
+            s = st;
             sizeGrids = [obj.props.sizeGrids];
             lStep = sizeGrids.interval();
             lGrids = cell(1, nProps);
@@ -38,7 +45,7 @@ classdef hrfvm_solver < pbe_solver
             
             % Loop variables initialization
             svar = struct();
-            GD = cell(size(props));
+            GD = zeros(size(props));
             Bs = zeros(size(props));
             Bp = zeros(size(props));
             massRate = zeros(size(props));
@@ -53,22 +60,22 @@ classdef hrfvm_solver < pbe_solver
                     svar.vf = vf(i);
                     svar.sigma = sigma(i);
                     % Kinetics
-                    [GD{i}, Bs(i), Bp(i)] = props(i).kinetics(svar);
+                    [GD(i), Bs(i), Bp(i)] = props(i).kinetics(svar);
                 end
                 
                 % early stop;
-                if max(abs(cell2mat(GD))) <= obj.options.earlyStopThreshold
+                if max(abs(GD)) <= obj.options.earlyStopThreshold
                     break;
                 end
 
                 % estimate time step
                 for i = 1 : nProps
-                    massRate(i) = particle_moment(lStep(i), lGrids{i}, x{i} .* GD{i}, 2) .* cKsDR(i);
+                    massRate(i) = particle_moment(lStep(i), lGrids{i}, x{i} .* GD(i), 2) .* cKsDR(i);
                 end
                 
                 massStepLimit = abs((c - cStars) ./ massRate);
                 
-                csdTimeLimit = abs(lStep ./ cellfun(@max, GD));
+                csdTimeLimit = abs(lStep ./ GD);
                 timeLimits = [massStepLimit csdTimeLimit];
                 tStep = min(timeLimits) * cfl;
                 tNow = tNow + tStep;
@@ -79,7 +86,7 @@ classdef hrfvm_solver < pbe_solver
                 
                 for i = 1 : nProps
                     % Calculate next CSD
-                    x{i} = obj.forward_csd(x{i}, sigma(i), Bp(i), Bs(i), GD{i}, tStep, lStep(i));
+                    x{i} = obj.forward_csd(x{i}, sigma(i), Bp(i), Bs(i), GD(i), tStep, lStep(i));
                     % Derive mass change
                     newM3(i) = particle_moment(lStep(i), lGrids{i}, x{i}, 3);
                 end
@@ -90,7 +97,8 @@ classdef hrfvm_solver < pbe_solver
                 c = c - sum(deltaMass);
             end
             
-            nextState(nProps) = struct();
+            % TODO this order affects code generation
+            nextState = repmat(struct('conc', 0, 'moment3', 0, 'csd', zeros(size(x{1}))), 1, nProps);
             for i = 1 : nProps
                 nextState(i).csd = x{i};
                 nextState(i).moment3 = m3(i);
