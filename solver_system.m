@@ -1,4 +1,4 @@
-classdef solver_system < matlab.System & matlab.system.mixin.Propagates
+classdef solver_system < matlab.System & matlab.system.mixin.Propagates & matlab.system.mixin.SampleTime
     properties(Nontunable)
         sampleTimeSecond = 30;
         cfl = 0.1;
@@ -82,6 +82,10 @@ classdef solver_system < matlab.System & matlab.system.mixin.Propagates
                 n = numel(obj.solverObj.props);
                 varargout = repmat({true}, n, 1);
             end
+        end
+
+        function sts = getSampleTimeImpl(obj)
+            sts = obj.createSampleTime("Type", "Discrete", "SampleTime", obj.sampleTimeSecond);
         end
     end
 end
