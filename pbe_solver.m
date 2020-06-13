@@ -72,8 +72,6 @@ classdef pbe_solver < handle
             kShapes = [properties.kShape];
             cKsDR = kShapes .* [properties.densityRatio] / 1e18;
             x = cell(size(properties));
-            effectiveCSDs = cell(size(properties));
-            effectiveLGrids = cell(size(properties));
             for i = 1 : nProps
                 x{i} = s(i).csd;
             end
@@ -97,13 +95,18 @@ classdef pbe_solver < handle
             %% Locate the current in-use size range
             % This optimization should help reducing the computational load
             % by excluding the unused channels in integration.
-            csdNonZeroMarks = zeros(size(x));
-            for i = 1 : nProps
-                mark = find(x{i} ~= 0, 1, 'last');
-                if isempty(mark)
-                    mark = 1;
+            effectiveCSDs = x;
+            effectiveLGrids = lGrids;
+            optUseSubCSD = obj.options.useSubCSD;
+            if optUseSubCSD
+                csdNonZeroMarks = zeros(size(x));
+                for i = 1 : nProps
+                    mark = find(x{i} ~= 0, 1, 'last');
+                    if isempty(mark)
+                        mark = 1;
+                    end
+                    csdNonZeroMarks(i) = mark;
                 end
-                csdNonZeroMarks(i) = mark;
             end
             
             
@@ -126,10 +129,12 @@ classdef pbe_solver < handle
                 end
 
                 % Populate effective CSD (nonzeros + 1 channel)
-                for i = 1 : nProps
-                    mark = csdNonZeroMarks(i);
-                    effectiveCSDs{i} = x{i}(1:mark+1);
-                    effectiveLGrids{i} = lGrids{i}(1:mark+1);
+                if optUseSubCSD
+                    for i = 1 : nProps
+                        mark = csdNonZeroMarks(i);
+                        effectiveCSDs{i} = x{i}(1:mark+1);
+                        effectiveLGrids{i} = lGrids{i}(1:mark+1);
+                    end
                 end
                 
                 % calculate time step with the predicted change of
@@ -166,22 +171,24 @@ classdef pbe_solver < handle
                 c = c - sum(deltaMass);
                 
                 % Update effective CSD mark
-                for i = 1 : nProps
-                    % Overwrite the original CSD
-                    x{i}(1:csdNonZeroMarks(i)+1) = effectiveCSDs{i};
-                    if effectiveCSDs{i}(end) == 0
-                        % The extra channel does not have data. Either not
-                        % growing or dissolving. Then, the mark should
-                        % backtrace the new zero channels
-                        mark = find(effectiveCSDs{i} ~= 0, 1, 'last');
-                        if isempty(mark)
-                            mark = 1;
-                        end
-                        csdNonZeroMarks(i) = mark;
-                    else
-                        % Otherwise, right shift 1 channel for next growth.
-                        if csdNonZeroMarks(i) < size(x{i}, 1)
-                            csdNonZeroMarks(i) = csdNonZeroMarks(i) + 1;
+                if optUseSubCSD
+                    for i = 1 : nProps
+                        % Overwrite the original CSD
+                        x{i}(1:csdNonZeroMarks(i)+1) = effectiveCSDs{i};
+                        if effectiveCSDs{i}(end) == 0
+                            % The extra channel does not have data. Either not
+                            % growing or dissolving. Then, the mark should
+                            % backtrace the new zero channels
+                            mark = find(effectiveCSDs{i} ~= 0, 1, 'last');
+                            if isempty(mark)
+                                mark = 1;
+                            end
+                            csdNonZeroMarks(i) = mark;
+                        else
+                            % Otherwise, right shift 1 channel for next growth.
+                            if csdNonZeroMarks(i) < size(x{i}, 1)
+                                csdNonZeroMarks(i) = csdNonZeroMarks(i) + 1;
+                            end
                         end
                     end
                 end
@@ -190,7 +197,13 @@ classdef pbe_solver < handle
             % TODO this order affects code generation
             nextState = repmat(struct('conc', 0, 'moment3', 0, 'csd', zeros(size(x{1}))), 1, nProps);
             for i = 1 : nProps
-                nextState(i).csd = x{i};
+                if optUseSubCSD
+                    nextState(i).csd = x{i};
+                else
+                    % when not using sub-CSD, the x does not update in the
+                    % loop.
+                    nextState(i).csd = effectiveCSDs{i};
+                end
                 nextState(i).moment3 = m3(i);
                 nextState(i).conc = c;
             end
