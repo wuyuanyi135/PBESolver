@@ -4,119 +4,14 @@ classdef hrfvm_solver < pbe_solver %#codegen
             obj = obj@pbe_solver(options, props);
         end
     end
-    methods
-        function nextState = step(obj, currentState, inputs, cfl, tSpan)
-            % TODO size dependent GD is not allowed!
-            if isempty(currentState)
-                st = obj.prevStates;
-                stateful = true;
-            else
-                st = currentState;
-                stateful = false;
-            end
-            
-            props = obj.props;
-            nProps = numel(props);
-            assert(numel(st) == nProps);
-            
-            tNow = 0;
-            s = st;
-            sizeGrids = [obj.props.sizeGrids];
-            lStep = sizeGrids.interval();
-            lGrids = cell(1, nProps);
-            for i = 1 : nProps
-                lGrids{i} = sizeGrids(i).to_array();
-            end
-            
-            kShapes = [props.kShape];
-            cKsDR = kShapes .* [props.densityRatio] / 1e18;
-            x = cell(size(props));
-            for i = 1 : nProps
-                x{i} = s(i).csd;
-            end
-            c = s(1).conc; % only first concentration is used.
-            m3 = [s.moment3];
-            
-            % Compute solubility
-            cStars = zeros(size(props));
-            for i = 1 : nProps
-                cStars(i) = props(i).solubility(inputs.tC);
-            end
-            
-            % Loop variables initialization
-            svar = struct();
-            GD = zeros(size(props));
-            Bs = zeros(size(props));
-            Bp = zeros(size(props));
-            massRate = zeros(size(props));
-            newM3 = zeros(size(props));
-            
-            while tNow < tSpan
-                vf = m3 / 1e18 .* kShapes;
-                sigma = c ./ cStars - 1;
-                
-                for i = 1 : nProps
-                    svar.tC = inputs.tC;
-                    svar.vf = vf(i);
-                    svar.sigma = sigma(i);
-                    % Kinetics
-                    [GD(i), Bs(i), Bp(i)] = props(i).kinetics(svar);
-                end
-                
-                % early stop;
-                if max(abs(GD)) <= obj.options.earlyStopThreshold
-                    break;
-                end
-
-                % estimate time step
-                for i = 1 : nProps
-                    massRate(i) = particle_moment(lStep(i), lGrids{i}, x{i} .* GD(i), 2) .* cKsDR(i);
-                end
-                
-                massStepLimit = abs((c - cStars) ./ massRate);
-                
-                csdTimeLimit = abs(lStep ./ GD);
-                timeLimits = [massStepLimit csdTimeLimit];
-                tStep = min(timeLimits) * cfl;
-                tNow = tNow + tStep;
-                if tNow > tSpan 
-                    tNow = tSpan;
-                    tStep = tSpan - tNow;
-                end
-                
-                for i = 1 : nProps
-                    % Calculate next CSD
-                    x{i} = obj.forward_csd(x{i}, sigma(i), Bp(i), Bs(i), GD(i), tStep, lStep(i));
-                    % Derive mass change
-                    newM3(i) = particle_moment(lStep(i), lGrids{i}, x{i}, 3);
-                end
-                deltaMass = (newM3 - m3) .* cKsDR;
-                
-                m3 = newM3;
-                
-                c = c - sum(deltaMass);
-            end
-            
-            % TODO this order affects code generation
-            nextState = repmat(struct('conc', 0, 'moment3', 0, 'csd', zeros(size(x{1}))), 1, nProps);
-            for i = 1 : nProps
-                nextState(i).csd = x{i};
-                nextState(i).moment3 = m3(i);
-                nextState(i).conc = c;
-            end
-            
-            if stateful
-                obj.prevStates = nextState;
-            end
-        end
-    end
     
     methods (Static)
         function phi = flux_limiter(theta)
             phi = (theta + abs(theta))./(1+abs(theta)); 
         end
-        
-        function x = forward_csd(x, sigma, Bp, Bs, GD, tStep, lStep)
+    end
+    methods (Access = protected)
+        function x = step_csd(obj, x, sigma, Bp, Bs, GD, tStep, lStep)
             if sigma > 0
                 % growth
                 % boundary condition
