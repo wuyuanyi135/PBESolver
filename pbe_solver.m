@@ -72,6 +72,8 @@ classdef pbe_solver < handle
             kShapes = [properties.kShape];
             cKsDR = kShapes .* [properties.densityRatio] / 1e18;
             x = cell(size(properties));
+            effectiveCSDs = cell(size(properties));
+            effectiveLGrids = cell(size(properties));
             for i = 1 : nProps
                 x{i} = s(i).csd;
             end
@@ -92,6 +94,18 @@ classdef pbe_solver < handle
             massRate = zeros(size(properties));
             newM3 = zeros(size(properties));
             
+            %% Locate the current in-use size range
+            % This optimization should help reducing the computational load
+            % by excluding the unused channels in integration.
+            csdNonZeroMarks = zeros(size(x));
+            for i = 1 : nProps
+                mark = find(x{i} ~= 0, 1, 'last');
+                if isempty(mark)
+                    mark = 1;
+                end
+                csdNonZeroMarks(i) = mark;
+            end
+            
             
             %% Loop through
             while tNow < tSpan
@@ -111,13 +125,20 @@ classdef pbe_solver < handle
                     break;
                 end
 
+                % Populate effective CSD (nonzeros + 1 channel)
+                for i = 1 : nProps
+                    mark = csdNonZeroMarks(i);
+                    effectiveCSDs{i} = x{i}(1:mark+1);
+                    effectiveLGrids{i} = lGrids{i}(1:mark+1);
+                end
+                
                 % calculate time step with the predicted change of
                 %   1. concentration change (should not bypass the
                 %   solubility line)
                 %   2. CSD change (should respect stability condition)
                 % TODO: get_time_step slot
                 for i = 1 : nProps
-                    massRate(i) = particle_moment(lStep(i), lGrids{i}, x{i} .* GD(i), 2) .* cKsDR(i);
+                    massRate(i) = particle_moment(lStep(i), effectiveLGrids{i}, effectiveCSDs{i} .* GD(i), 2) .* cKsDR(i);
                 end
                 
                 massStepLimit = abs((c - cStars) ./ massRate);
@@ -134,15 +155,36 @@ classdef pbe_solver < handle
                 
                 for i = 1 : nProps
                     % Calculate next CSD
-                    x{i} = obj.step_csd(x{i}, sigma(i), Bp(i), Bs(i), GD(i), tStep, lStep(i));
+                    effectiveCSDs{i} = obj.step_csd(effectiveCSDs{i}, Bp(i), Bs(i), GD(i), tStep, lStep(i));
                     % Derive mass change
-                    newM3(i) = particle_moment(lStep(i), lGrids{i}, x{i}, 3);
+                    newM3(i) = particle_moment(lStep(i), effectiveLGrids{i}, effectiveCSDs{i}, 3);
                 end
                 deltaMass = (newM3 - m3) .* cKsDR;
                 
                 m3 = newM3;
                 
                 c = c - sum(deltaMass);
+                
+                % Update effective CSD mark
+                for i = 1 : nProps
+                    % Overwrite the original CSD
+                    x{i}(1:csdNonZeroMarks(i)+1) = effectiveCSDs{i};
+                    if effectiveCSDs{i}(end) == 0
+                        % The extra channel does not have data. Either not
+                        % growing or dissolving. Then, the mark should
+                        % backtrace the new zero channels
+                        mark = find(effectiveCSDs{i} ~= 0, 1, 'last');
+                        if isempty(mark)
+                            mark = 1;
+                        end
+                        csdNonZeroMarks(i) = mark;
+                    else
+                        % Otherwise, right shift 1 channel for next growth.
+                        if csdNonZeroMarks(i) < size(x{i}, 1)
+                            csdNonZeroMarks(i) = csdNonZeroMarks(i) + 1;
+                        end
+                    end
+                end
             end
             
             % TODO this order affects code generation
@@ -160,7 +202,7 @@ classdef pbe_solver < handle
     end
     
     methods (Access = protected)
-        function nextCSD = step_csd(obj, x, sigma, Bp, Bs, GD, tStep, lStep)
+        function nextCSD = step_csd(obj, x, Bp, Bs, GD, tStep, lStep)
             %% Derive next CSD based on current conditions
         end
         function shouldEarlyStop = check_early_stop(obj, tNow, tSpan, GD, sigma)

@@ -11,8 +11,8 @@ classdef hrfvm_solver < pbe_solver %#codegen
         end
     end
     methods (Access = protected)
-        function x = step_csd(obj, x, sigma, Bp, Bs, GD, tStep, lStep)
-            if sigma > 0
+        function x = step_csd(obj, x, Bp, Bs, GD, tStep, lStep)
+            if GD(1) > 0
                 % growth
                 % boundary condition
                 x(1) = (Bp + Bs)/GD;
