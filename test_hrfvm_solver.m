@@ -1,4 +1,4 @@
-classdef test_hrfvm_solver < matlab.unittest.TestCase
+classdef test_hrfvm_solver < matlab.perftest.TestCase
     properties(TestParameter)
         useSubCSD = struct('UseSubCSD', true, 'NoSubCSD', false);
     end
