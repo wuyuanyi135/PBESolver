@@ -17,8 +17,6 @@ s.set_initial_states(ic);
 
 sampleTime = 30;
 
-cfl = 0.1;
-
 model = 'polymorphism';
 open_system(model);
 sim(model);

@@ -1,7 +1,6 @@
 classdef solver_system < matlab.System & matlab.system.mixin.Propagates & matlab.system.mixin.SampleTime
     properties(Nontunable)
         sampleTimeSecond = 30;
-        cfl = 0.1;
         solverObj = [];
         ic = [];
     end
@@ -43,7 +42,7 @@ classdef solver_system < matlab.System & matlab.system.mixin.Propagates & matlab
             % Implement algorithm. Calculate y as a function of input u and
             % discrete states.
             in = make_inputs(u);
-            nextState = obj.solverObj.step([], in, obj.cfl, obj.sampleTimeSecond);
+            nextState = obj.solverObj.step([], in, obj.sampleTimeSecond);
             c = nextState(1).conc;
             varargout = {nextState.csd};
         end

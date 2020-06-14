@@ -25,7 +25,7 @@ classdef pbe_solver < handle
             obj.prevStates = states;
         end
         
-        function nextState = step(obj, currentState, inputs, cfl, tSpan)
+        function nextState = step(obj, currentState, inputs, tSpan)
             %% Derive next state
             % currentState: structure:
             %   conc: double scalar
@@ -62,6 +62,7 @@ classdef pbe_solver < handle
             assert(numel(s) == nProps);
             
             tNow = 0;
+            timeStepScale = obj.options.timeStepScale;
             sizeGrids = [obj.props.sizeGrids];
             lStep = sizeGrids.interval();
             lGrids = cell(1, nProps);
@@ -150,7 +151,7 @@ classdef pbe_solver < handle
                 
                 csdTimeLimit = abs(lStep ./ GD);
                 timeLimits = [massStepLimit csdTimeLimit];
-                tStep = min(timeLimits) * cfl;
+                tStep = min(timeLimits) * timeStepScale;
                 
                 tNow = tNow + tStep;
                 if tNow > tSpan 
