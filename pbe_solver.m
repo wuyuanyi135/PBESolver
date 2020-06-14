@@ -144,7 +144,7 @@ classdef pbe_solver < handle
                 %   2. CSD change (should respect stability condition)
                 % TODO: get_time_step slot
                 for i = 1 : nProps
-                    massRate(i) = particle_moment(lStep(i), effectiveLGrids{i}, effectiveCSDs{i} .* GD(i), 2) .* cKsDR(i);
+                    massRate(i) = particle_moment(lStep(i), effectiveCSDs{i} .* GD(i), 2) .* cKsDR(i);
                 end
                 
                 massStepLimit = abs((c - cStars) ./ massRate);
@@ -163,7 +163,7 @@ classdef pbe_solver < handle
                     % Calculate next CSD
                     effectiveCSDs{i} = obj.step_csd(effectiveCSDs{i}, Bp(i), Bs(i), GD(i), tStep, lStep(i));
                     % Derive mass change
-                    newM3(i) = particle_moment(lStep(i), effectiveLGrids{i}, effectiveCSDs{i}, 3);
+                    newM3(i) = particle_moment(lStep(i), effectiveCSDs{i}, 3);
                 end
                 deltaMass = (newM3 - m3) .* cKsDR;
                 

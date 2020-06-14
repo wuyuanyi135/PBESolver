@@ -13,7 +13,7 @@ end
 if size(grid) == size(initCsd)
     states.csd = initCsd; 
     lStep = props.sizeGrids.interval();
-    states.moment3 = particle_moment(lStep, grid, initCsd, 3);
+    states.moment3 = particle_moment(lStep, initCsd, 3);
 else
     error('initCsd should be 0 or a vector of the same size of sizeGrids')
 end
