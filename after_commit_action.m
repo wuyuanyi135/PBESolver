@@ -29,6 +29,7 @@ runner = TestRunner.withNoPlugins;
 reportFile = fullfile(destinationFolder, 'test_report.pdf');
 plugin = TestReportPlugin.producingPDF(reportFile);
 runner.addPlugin(plugin);
+suite = matlab.unittest.TestSuite.fromFolder(pwd);
 result = runner.run(suite);
 
 cprintf('blue', 'Running Benchmarks.\n');
