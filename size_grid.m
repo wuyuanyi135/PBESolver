@@ -8,8 +8,8 @@ classdef size_grid
     end
     
     methods
-        function obj = size_grid(lowBound, highBound, nPoints)
-            obj.lowBound = lowBound;
+        function obj = size_grid(highBound, nPoints)
+            obj.lowBound = 0;
             obj.highBound = highBound;
             obj.nPoints = nPoints;
         end
@@ -23,6 +23,10 @@ classdef size_grid
         function ret = interval(obj)
             % Get the grid interval in um
             ret = ([obj.highBound] - [obj.lowBound]) ./ ([obj.nPoints] - 1);
+        end
+        
+        function equality = eq(obj1, obj2)
+            equality = obj1.highBound == obj2.highBound && obj1.interval == obj2.interval;
         end
     end
 end

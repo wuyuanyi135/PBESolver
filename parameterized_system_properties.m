@@ -36,7 +36,7 @@ classdef parameterized_system_properties < system_properties
     
     methods
         function obj = parameterized_system_properties()
-            obj.sizeGrids = size_grid(0, 999, 999);
+            obj.sizeGrids = size_grid(999, 999);
         end
     end
     
