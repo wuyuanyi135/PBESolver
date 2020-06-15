@@ -1,14 +1,15 @@
-classdef test_hrfvm_solver < matlab.perftest.TestCase
+classdef test_solver < matlab.perftest.TestCase
     properties(TestParameter)
         useSubCSD = struct('UseSubCSD', true, 'NoSubCSD', false);
+        solver = struct('HRFVM', @hrfvm_solver);
     end
     methods(Test)
-        function test_default_growth(testCase, useSubCSD)
+        function test_default_growth(testCase, useSubCSD, solver)
             props = parameterized_system_properties();
             options = make_options();
             options.earlyStopThreshold = 0;
             options.useSubCSD = useSubCSD;
-            s = hrfvm_solver(options, props);
+            s = solver(options, props);
             ic = make_states(props.solubility(60), 0, props);
             in = make_inputs(25);
             tSpan = 300;
@@ -16,12 +17,12 @@ classdef test_hrfvm_solver < matlab.perftest.TestCase
             testCase.assertEqual(nextState.conc, 0.030478231269330, 'RelTol', 1e-3);
         end
         
-        function test_multistep(testCase, useSubCSD)
+        function test_multistep(testCase, useSubCSD, solver)
             props = parameterized_system_properties();
             options = make_options();
             options.earlyStopThreshold = 0;
             options.useSubCSD = useSubCSD;
-            s = hrfvm_solver(options, props);
+            s = solver(options, props);
             ic = make_states(props.solubility(60), 0, props);
             in = make_inputs(25);
             tSpan = 100;
@@ -35,12 +36,12 @@ classdef test_hrfvm_solver < matlab.perftest.TestCase
             testCase.assertEqual(nextState.conc, 0.030478231269330, 'AbsTol', 1e-4);
         end
         
-        function test_early_stop(testCase, useSubCSD)
+        function test_early_stop(testCase, useSubCSD, solver)
             props = parameterized_system_properties();
             options = make_options();
             options.earlyStopThreshold = 1e-5;
             options.useSubCSD = useSubCSD;
-            s = hrfvm_solver(options, props);
+            s = solver(options, props);
             ic = make_states(props.solubility(60), 0, props);
             in = make_inputs(25);
             tSpan = 2000;
@@ -48,7 +49,7 @@ classdef test_hrfvm_solver < matlab.perftest.TestCase
             testCase.assertEqual(nextState.conc, 0.010595206881399, 'AbsTol', 1e-4);
         end
         
-        function test_polymorphism(testCase, useSubCSD)
+        function test_polymorphism(testCase, useSubCSD, solver)
             props1 = parameterized_system_properties();
             props2 = parameterized_system_properties();
             props2.solubilityPoly = [6.222e-3; -1.165e-4; 7.644e-6];
@@ -65,17 +66,17 @@ classdef test_hrfvm_solver < matlab.perftest.TestCase
         
             in = make_inputs(25);
             
-            s = hrfvm_solver(options, props);
+            s = solver(options, props);
             tSpan = 2000;
             nextState = s.step(ic, in, tSpan);            
         end
         
-        function test_stateful_single_step(testCase, useSubCSD)
+        function test_stateful_single_step(testCase, useSubCSD, solver)
             props = parameterized_system_properties();
             options = make_options();
             options.earlyStopThreshold = 0;
             options.useSubCSD = useSubCSD;
-            s = hrfvm_solver(options, props);
+            s = solver(options, props);
             ic = make_states(props.solubility(60), 0, props);
             in = make_inputs(25);
             tSpan = 300;
