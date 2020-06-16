@@ -22,18 +22,29 @@ classdef parameterized_system_properties < system_properties
         % Each element should be of the same size
         gKg = 0.1
         gG = 1
-        gAlpha = 1
         gBeta = 0
         gEa = 0
         
         % Dissolution (of each axis)
         dKd = 2.2
         dD = 1
-        dAlpha = 1
         dBeta = 0
         dEa = 0
     end
-    
+    methods
+        function obj = set.gBeta(obj, x)
+            if obj.sizeGrids.highBound * x + 1 <= 0
+                error('Invalid gBeta: potential flipped growth rate.')
+            end
+            obj.gBeta = x;
+        end
+        function obj = set.dBeta(obj, x)
+            if obj.sizeGrids.highBound * x + 1 <= 0
+                error('Invalid dBeta: potential flipped dissolution rate.')
+            end
+            obj.dBeta = x;
+        end
+    end
     methods
         function obj = parameterized_system_properties()
             obj.sizeGrids = size_grid(999, 999);
@@ -56,7 +67,7 @@ classdef parameterized_system_properties < system_properties
                 else
                     % size-dependent growth
                     GD = obj.gKg * sigma .^ obj.gG ...
-                        * (obj.gAlpha + obj.gBeta * svar.lGrids) ...
+                        * (1 + obj.gBeta * svar.lGrids) ...
                         * exp(-obj.gEa / R / tK);
                 end
                 Bp =  obj.pnKp * sigma .^ obj.pnP ...
@@ -73,7 +84,7 @@ classdef parameterized_system_properties < system_properties
                 else
                     % size-dependent dissolution
                     GD = obj.dKd * sigma .^ obj.dD ...
-                        * (obj.dAlpha + obj.dBeta * svar.lGrids) ...
+                        * (1 + obj.dBeta * svar.lGrids) ...
                         * exp(-obj.dEa / R / tK);
                 end
                 Bp = 0;
