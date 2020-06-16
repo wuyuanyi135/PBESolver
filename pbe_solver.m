@@ -59,11 +59,12 @@ classdef pbe_solver < handle
             
             properties = obj.props;
             nProps = numel(properties);
+            szProps = size(properties);
             assert(numel(s) == nProps);
             
             tNow = 0;
             timeStepScale = obj.options.timeStepScale;
-            sizeGrids = [obj.props.sizeGrids];
+            sizeGrids = [properties.sizeGrids];
             lStep = sizeGrids.interval();
             lGrids = cell(1, nProps);
             for i = 1 : nProps
@@ -80,18 +81,18 @@ classdef pbe_solver < handle
             m3 = [s.moment3];
             
             % Compute solubility
-            cStars = zeros(size(properties));
+            cStars = zeros(szProps);
             for i = 1 : nProps
                 cStars(i) = properties(i).solubility(inputs.tC);
             end
             
             % Loop variables initialization
             svar = struct();
-            GD = zeros(size(properties));
-            Bs = zeros(size(properties));
-            Bp = zeros(size(properties));
-            massRate = zeros(size(properties));
-            newM3 = zeros(size(properties));
+            GD = cell(szProps);
+            Bs = zeros(szProps);
+            Bp = zeros(szProps);
+            massRate = zeros(szProps);
+            newM3 = zeros(szProps);
             
             %% Locate the current in-use size range
             % This optimization should help reducing the computational load
@@ -113,22 +114,6 @@ classdef pbe_solver < handle
             
             %% Loop through
             while tNow < tSpan
-                vf = m3 / 1e18 .* kShapes;
-                sigma = c ./ cStars - 1;
-                
-                for i = 1 : nProps
-                    svar.tC = inputs.tC;
-                    svar.vf = vf(i);
-                    svar.sigma = sigma(i);
-                    % Kinetics
-                    [GD(i), Bs(i), Bp(i)] = properties(i).kinetics(svar);
-                end
-                
-                % early stop
-                if obj.check_early_stop(tNow, tSpan, GD, sigma)
-                    break;
-                end
-
                 % Populate effective CSD (nonzeros + 1 channel)
                 if optUseSubCSD
                     for i = 1 : nProps
@@ -138,18 +123,44 @@ classdef pbe_solver < handle
                     end
                 end
                 
+                vf = m3 / 1e18 .* kShapes;
+                sigma = c ./ cStars - 1;
+                
+                for i = 1 : nProps
+                    svar.tC = inputs.tC;
+                    svar.vf = vf(i);
+                    svar.sigma = sigma(i);
+                    svar.lGrids = effectiveLGrids{i};
+                    % Kinetics
+                    [GD{i}, Bs(i), Bp(i)] = properties(i).kinetics(svar);
+                end
+                
+                % early stop
+                if obj.check_early_stop(tNow, tSpan, GD, sigma)
+                    break;
+                end
+                
                 % calculate time step with the predicted change of
                 %   1. concentration change (should not bypass the
                 %   solubility line)
                 %   2. CSD change (should respect stability condition)
                 % TODO: get_time_step slot
                 for i = 1 : nProps
-                    massRate(i) = particle_moment(lStep(i), effectiveCSDs{i} .* GD(i), 2) .* cKsDR(i);
+                    massRate(i) = particle_moment(lStep(i), effectiveCSDs{i} .* GD{i}, 2) .* cKsDR(i);
                 end
                 
                 massStepLimit = abs((c - cStars) ./ massRate);
                 
-                csdTimeLimit = abs(lStep ./ GD);
+                csdTimeLimits = zeros(size(GD));
+                % TODO size_dependent_mismatch: when disabling SubCSD optimization, and if GD is
+                % increasing over size, the time step of unused channels
+                % will result in smaller time steps and affects the result
+                % consistency between SubCSD ON and SubCSD OFF.
+                for i = 1 : numel(GD)
+                    csdTimeLimits(i) = min(abs(lStep ./ GD{i}));
+                end
+                csdTimeLimit = min(csdTimeLimits);
+                
                 timeLimits = [massStepLimit csdTimeLimit];
                 tStep = min(timeLimits) * timeStepScale;
                 
@@ -161,7 +172,7 @@ classdef pbe_solver < handle
                 
                 for i = 1 : nProps
                     % Calculate next CSD
-                    effectiveCSDs{i} = obj.step_csd(effectiveCSDs{i}, Bp(i), Bs(i), GD(i), tStep, lStep(i));
+                    effectiveCSDs{i} = obj.step_csd(effectiveCSDs{i}, Bp(i), Bs(i), GD{i}, tStep, lStep(i));
                     % Derive mass change
                     newM3(i) = particle_moment(lStep(i), effectiveCSDs{i}, 3);
                 end
@@ -225,7 +236,12 @@ classdef pbe_solver < handle
             % tSpan: current solution time span
             % GD: growth or dissolution rates
             % sigma: supersaturations
-            shouldEarlyStop = max(abs(GD)) <= obj.options.earlyStopThreshold;
+            GDs = zeros(size(GD));
+            for i = 1 : numel(GD)
+                GDs(i) = max(abs(GD{i}));
+            end
+            
+            shouldEarlyStop = max(GDs) <= obj.options.earlyStopThreshold;
         end
       
     end

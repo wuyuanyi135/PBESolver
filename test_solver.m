@@ -85,6 +85,36 @@ classdef test_solver < matlab.perftest.TestCase
             testCase.assertEqual(nextState.conc, 0.030478231269330, 'RelTol', 1e-3);
             testCase.assertEqual(s.prevStates.conc, 0.030478231269330, 'RelTol', 1e-3);
         end
+        
+        function test_size_dependent_growth(testCase, useSubCSD, solver)
+            props = parameterized_system_properties();
+            props.gBeta = -2e-3;
+            options = make_options();
+            options.earlyStopThreshold = 0;
+            options.useSubCSD = useSubCSD;
+            s = solver(options, props);
+            ic = make_states(props.solubility(60), 0, props);
+            in = make_inputs(25);
+            tSpan = 300;
+            nextState = s.step(ic, in, tSpan);
+            testCase.assertEqual(nextState.conc, 0.031484824871881, 'RelTol', 1e-3);
+        end
+        function test_size_dependent_growth_increasing_faster(testCase, solver)
+            % Warning: this case needs attention. See TODO
+            % size_dependent_mismatch.
+            props = parameterized_system_properties();
+            props.gBeta = 1e-3;
+            options = make_options();
+            options.earlyStopThreshold = 0;
+            options.useSubCSD = true;
+            options.timeStepScale = 1e-1;
+            s = solver(options, props);
+            ic = make_states(props.solubility(60), 0, props);
+            in = make_inputs(25);
+            tSpan = 300;
+            nextState = s.step(ic, in, tSpan);
+            testCase.assertEqual(nextState.conc, 0.030349372372848, 'RelTol', 1e-3);
+        end
     end
 end
 
