@@ -94,35 +94,43 @@ classdef pbe_solver < handle
             massRate = zeros(szProps);
             newM3 = zeros(szProps);
             
-            %% Locate the current in-use size range
+            %% Locate the current in-use size range and Step-artifact prevention
             % This optimization should help reducing the computational load
             % by excluding the unused channels in integration.
+            % TODO solver_steps_create_small_n_in_csd
+            optUseSubCSD = obj.options.useSubCSD;
             effectiveCSDs = x;
             effectiveLGrids = lGrids;
-            optUseSubCSD = obj.options.useSubCSD;
             if optUseSubCSD
-                csdNonZeroMarks = zeros(size(x));
+
+                rightSizeCaps = zeros(szProps);
+                rPositions = zeros(szProps);
+            
                 for i = 1 : nProps
-                    mark = find(x{i} ~= 0, 1, 'last');
+                    mark = find(x{i} > eps , 1, 'last');
                     if isempty(mark)
-                        mark = 1;
+                        mark = 1; % first channel must be zero (nucleation point)
                     end
-                    csdNonZeroMarks(i) = mark;
+                    rightSizeCaps(i) = lGrids{i}(mark);
+
+                    cap = rightSizeCaps(i);
+                    % Find the first channel that is above the current cap.
+                    rPositions(i) = find(lGrids{i}>=cap, 1);
+                    % Because each step the growth/dissolution cannot
+                    % propagate more than one channel, leaving one spare is
+                    % enough.
+                    if rPositions(i) == numel(lGrids{i})
+                        idx = 1:rPositions(i);
+                    else
+                        idx = 1:rPositions(i)+1;
+                    end
+                    effectiveLGrids{i} = lGrids{i}(idx);
+                    effectiveCSDs{i} = x{i}(idx);
                 end
             end
             
-            
-            %% Loop through
+            %% Loop
             while tNow < tSpan
-                % Populate effective CSD (nonzeros + 1 channel)
-                if optUseSubCSD
-                    for i = 1 : nProps
-                        mark = csdNonZeroMarks(i);
-                        effectiveCSDs{i} = x{i}(1:mark+1);
-                        effectiveLGrids{i} = lGrids{i}(1:mark+1);
-                    end
-                end
-                
                 vf = m3 / 1e18 .* kShapes;
                 sigma = c ./ cStars - 1;
                 
@@ -171,8 +179,70 @@ classdef pbe_solver < handle
                 end
                 
                 for i = 1 : nProps
-                    % Calculate next CSD
-                    effectiveCSDs{i} = obj.step_csd(effectiveCSDs{i}, Bp(i), Bs(i), GD{i}, tStep, lStep(i));
+                    if optUseSubCSD
+                        gd = GD{i};
+                        % Determine next CSD right end location
+                        rSzCap = rightSizeCaps(i);
+                        if isscalar(gd)
+                            rightSizeCaps(i) = rSzCap + gd * tStep;
+                        else
+                            gdInterp = interp1(effectiveLGrids{i}, gd, rSzCap);
+                            rightSizeCaps(i) = rSzCap + gdInterp * tStep;
+                        end
+
+                        % After update, the right size cap may enter next
+                        % channel. That's why one extra channel is included in 
+                        % the above code. If the size cap does not move to next
+                        % channel, the extra calculated channel should be
+                        % discarded.
+                        oldPosition = rPositions(i);
+                        newPosition = find(lGrids{i}>=rightSizeCaps(i), 1);
+                        if isempty(newPosition)
+                            % All channels are overflown
+                            newPosition = numel(lGrids{i});
+                        end
+                        effCSD = effectiveCSDs{i};
+                        % Calculate next CSD
+                        effCSD = obj.step_csd(effCSD, Bp(i), Bs(i), gd, tStep, lStep(i));
+
+                        if newPosition == oldPosition
+                            % Growing, dissolving, anything, but not
+                            % entering other channel. oldPosition is the
+                            % previous right side position. We use it to
+                            % drop the right extra channel.
+                            if numel(effCSD) < numel(lGrids{i})
+                                effCSD(end) = 0;
+                            end
+                            effectiveCSDs{i} = effCSD;
+
+                        elseif newPosition == oldPosition - 1
+                            % Dissolution-induced mismatch. Drop the old
+                            % channel
+                            effectiveCSDs{i} = effCSD(1:newPosition);
+                            % Update the right (old) position & effective LGrids
+                            rPositions(i) = newPosition;
+                            idx = 1:(newPosition+1);
+                            effectiveLGrids{i} = lGrids{i}(idx);
+                        elseif newPosition == oldPosition + 1
+                            % Growth-induced mismatch, use full channels
+                            effectiveCSDs{i} = [effCSD; 0];
+                            % Update the right (old) position & effective LGrids
+                            rPositions(i) = newPosition;
+                            
+                            if newPosition == numel(lGrids{i})
+                                idx = 1:(newPosition);
+                            else
+                                idx = 1:(newPosition+1);
+                            end
+                            
+                            effectiveLGrids{i} = lGrids{i}(idx);
+                        else
+                            error('Unexpected branch reached.')
+                        end
+                    else
+                        effectiveCSDs{i} = obj.step_csd(effectiveCSDs{i}, Bp(i), Bs(i), GD{i}, tStep, lStep(i));
+                    end
+                    
                     % Derive mass change
                     newM3(i) = particle_moment(lStep(i), effectiveCSDs{i}, 3);
                 end
@@ -181,41 +251,15 @@ classdef pbe_solver < handle
                 m3 = newM3;
                 
                 c = c - sum(deltaMass);
-                
-                % Update effective CSD mark
-                if optUseSubCSD
-                    for i = 1 : nProps
-                        % Overwrite the original CSD
-                        x{i}(1:csdNonZeroMarks(i)+1) = effectiveCSDs{i};
-                        if effectiveCSDs{i}(end) == 0
-                            % The extra channel does not have data. Either not
-                            % growing or dissolving. Then, the mark should
-                            % backtrace the new zero channels
-                            mark = find(effectiveCSDs{i} ~= 0, 1, 'last');
-                            if isempty(mark)
-                                mark = 1;
-                            end
-                            csdNonZeroMarks(i) = mark;
-                        else
-                            % Otherwise, right shift 1 channel for next growth.
-                            if csdNonZeroMarks(i) < size(x{i}, 1)
-                                csdNonZeroMarks(i) = csdNonZeroMarks(i) + 1;
-                            end
-                        end
-                    end
-                end
             end
             
             % TODO this order affects code generation
             nextState = repmat(struct('conc', 0, 'moment3', 0, 'csd', zeros(size(x{1}))), 1, nProps);
             for i = 1 : nProps
-                if optUseSubCSD
-                    nextState(i).csd = x{i};
-                else
-                    % when not using sub-CSD, the x does not update in the
-                    % loop.
-                    nextState(i).csd = effectiveCSDs{i};
-                end
+                effCSD = effectiveCSDs{i};
+                csd = zeros(size(lGrids{i}));
+                csd(1:numel(effCSD)) = effCSD;
+                nextState(i).csd = csd;
                 nextState(i).moment3 = m3(i);
                 nextState(i).conc = c;
             end

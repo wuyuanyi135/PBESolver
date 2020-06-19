@@ -16,47 +16,48 @@ classdef hrfvm_solver < pbe_solver %#codegen
             if GD(1) > 0
                 % growth
                 % boundary condition
-                x(1) = (Bp + Bs)/GD(1);
-                f = [x; 0]; 
+                f = [0; 0; x; 0]; 
                 d = diff(f);
                 theta = d(1:end-1)./d(2:end);
-                theta(isnan(theta) | isinf(theta)) = 0;
-                phi = hrfvm_solver.flux_limiter(theta);
-                phin_1 = [phi(2:end); phi(end)];
                 
-                % Note, during growth, the first channel is governed by the
-                % boundary condition. Hence, we do not prepend annother
-                % channel to f. However, for f_n or G_n in the equation,
-                % they should be f(2:end-1) or G(2:end-1).
+                % Adopted from CAT.
+                theta(isinf(theta)) = 0;
+                theta(isnan(theta)) = 2;
+                phi = hrfvm_solver.flux_limiter(theta);
                 
                 if isscalar(GD)
                     % size independent growth
-                    x(2:end) = x(2:end) - tStep * GD /lStep * (f(2:end-1) - f(1:end-2)) ...
-                        - (tStep * GD/2/lStep .* (1 - tStep*GD/lStep) .* (f(3:end) - f(2:end-1)) .* phi ...
-                        - tStep * GD/2/lStep .* (1 - tStep*GD/lStep) .* (f(2:end-1) - f(1:end-2)) .* phin_1);
+                    x = x - tToL * GD * (f(3:end-1) - f(2:end-2)) ...
+                        - tToL * GD / 2 * (1 - tToL * GD) .* ( ...
+                        (f(4:end) - f(3:end-1)) .* phi(2:end) - (f(3:end-1) - f(2:end-2)) .* phi(1:end-1) ....
+                        );
                 else
                     % size dependent growth
-                    G = [GD; GD(end)];
+                    G = [GD(1); GD(1); GD; GD(end)];
                     Gf = G.*f;
-                    x(2:end) = x(2:end) - tToL * (Gf(2:end-1) - Gf(1:end-2)) ...
-                        - (tToL/2 * G(2:end-1) .* (1 - tToL * G(2:end-1)) .* (f(3:end) - f(2:end-1)) .* phi ...
-                        - tToL/2 * G(1:end-2) .* (1 - tToL * G(2:end-1)) .* (f(2:end-1) - f(1:end-2)) .* phin_1);
+                    x = x - tToL * (Gf(3:end-1) - Gf(2:end-2)) ...
+                        - (tToL/2 * G(3:end-1) .* (1 - tToL * G(3:end-1)) .* (f(4:end) - f(3:end-1)) .* phi(1:end-1) ...
+                        - tToL/2 * G(2:end-2) .* (1 - tToL * G(2:end-2)) .* (f(3:end-1) - f(2:end-2)) .* phi(2:end));
                 end
+                % Nucleation after growth, adopted from CAT.
+                x(1) = x(1) + (Bs + Bp) * tToL;
             else
                 % Dissolving
                 % boundary condition
-                f = [0; x; 0];
+                f = [0; x; 0; 0];
                 GD = -GD;
                 d = diff(f);
                 theta = d(2:end)./d(1:end-1);
-                theta(isnan(theta) | isinf(theta)) = 0;
+                % Adopted from CAT.
+                theta(isinf(theta)) = 0;
+                theta(isnan(theta)) = 2;
                 phi = hrfvm_solver.flux_limiter(theta);
-                phinp1 = [phi(1); phi(2:end)];
                 if isscalar(GD)
                     % size independent dissolution
-                    x = x - tStep * GD /lStep * (f(2:end-1)- f(3:end)) ...
-                        - (tStep * GD/2/lStep .* (1 - tStep*GD/lStep) .* (f(1:end-2)-f(2:end-1)) .* phi ...
-                        - tStep * GD/2/lStep .* (1 - tStep*GD/lStep) .* (f(2:end-1)-f(3:end)) .* phinp1);
+                    x = x - tToL * GD * (f(2:end-2)- f(3:end-1)) ...
+                        - tToL * GD / 2 * (1 - tToL * GD) * ( ...
+                        (f(1:end-3)-f(2:end-2)) .* phi(1:end-1) ...
+                        - (f(2:end-2)-f(3:end-1)) .* phi(2:end));
                 else
                     % size dependent dissolution
                     D = [GD(1); GD; GD(end)];
