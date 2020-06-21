@@ -64,6 +64,15 @@ classdef pbe_solver < handle
             
             tNow = 0;
             timeStepScale = obj.options.timeStepScale;
+            isMSMPR = obj.options.isMSMPR;
+            if isMSMPR
+                % Populate continuous inputs
+                resTime = inputs.resTime;
+                inConc = inputs.inConc;
+                inCSDs = inputs.inCSDs;
+                residenceTimeStepScale = obj.options.residenceTimeStepScale;
+            end
+            
             sizeGrids = [properties.sizeGrids];
             lStep = sizeGrids.interval();
             lGrids = cell(1, nProps);
@@ -97,7 +106,8 @@ classdef pbe_solver < handle
             %% Locate the current in-use size range and Step-artifact prevention
             % This optimization should help reducing the computational load
             % by excluding the unused channels in integration.
-            % TODO solver_steps_create_small_n_in_csd
+            % When continuous crystallization is involved, the effective
+            % CSD is the union of the state CSD and the inlet CSD.
             optUseSubCSD = obj.options.useSubCSD;
             effectiveCSDs = x;
             effectiveLGrids = lGrids;
@@ -111,11 +121,17 @@ classdef pbe_solver < handle
                     if isempty(mark)
                         mark = 1; % first channel must be zero (nucleation point)
                     end
+                    if isMSMPR
+                        inCSDMark = find(inCSDs{i} > eps , 1, 'last');
+                        if isempty(inCSDMark)
+                            inCSDMark = 1;
+                        end
+                        mark = max(mark, inCSDMark);
+                    end
                     rightSizeCaps(i) = lGrids{i}(mark);
-
-                    cap = rightSizeCaps(i);
                     % Find the first channel that is above the current cap.
-                    rPositions(i) = find(lGrids{i}>=cap, 1);
+                    % rPositions(i) = find(lGrids{i}>=cap, 1);
+                    rPositions(i) = mark;
                     % Because each step the growth/dissolution cannot
                     % propagate more than one channel, leaving one spare is
                     % enough.
@@ -153,6 +169,8 @@ classdef pbe_solver < handle
                 %   solubility line)
                 %   2. CSD change (should respect stability condition)
                 % TODO: get_time_step slot
+                % TODO: when no crystal and dissolving, remove the time
+                % step limit on PBE.
                 for i = 1 : nProps
                     massRate(i) = particle_moment(lStep(i), effectiveCSDs{i} .* GD{i}, 2) .* cKsDR(i);
                 end
@@ -165,11 +183,30 @@ classdef pbe_solver < handle
                 % will result in smaller time steps and affects the result
                 % consistency between SubCSD ON and SubCSD OFF.
                 for i = 1 : numel(GD)
-                    csdTimeLimits(i) = min(abs(lStep ./ GD{i}));
+                    if optUseSubCSD
+                        noParticle = rPositions(i) == 1;
+                    else
+                        noParticle = all(effectiveCSDs{i}==0);
+                    end
+                    if all(GD{i} == 0) || (noParticle && GD{i}(1) < 0)
+                        % GD is not useful when no growth/dissolution
+                        % or when there is no crystal and it is
+                        % dissolving.
+                        csdTimeLimits(i) = inf;
+                    else
+                        csdTimeLimits(i) = min(abs(lStep ./ GD{i}));
+                    end   
                 end
                 csdTimeLimit = min(csdTimeLimits);
                 
-                timeLimits = [massStepLimit csdTimeLimit];
+                % TODO: for MSMPR, the time step and tau should be related
+                if isMSMPR
+                    resTimeStep = resTime * residenceTimeStepScale;
+                    timeLimits = [massStepLimit csdTimeLimit resTimeStep];
+                else
+                    timeLimits = [massStepLimit csdTimeLimit];
+                end
+                
                 tStep = min(timeLimits) * timeStepScale;
                 
                 tNow = tNow + tStep;
@@ -179,6 +216,29 @@ classdef pbe_solver < handle
                 end
                 
                 for i = 1 : nProps
+                    if isMSMPR
+                        inCSD = inCSDs{i};
+                        n = effectiveCSDs{i};
+
+                        if inCSD == 0
+                            % Inlet is clear.
+                            effectiveCSDs{i} = n + tStep * (0 - n)/resTime;
+                        else
+                            % Inlet contains crystals.
+                            if optUseSubCSD
+                                % inCSD may have different effective CSD range.
+                                % In this branch, the current CSD and the
+                                % effective CSD range should be merged.
+                                nIn = inCSD(1: numel(n));
+                            else
+                                % Assume that the inlet CSD should always be
+                                % the same size as the effective CSD.
+                                nIn = inCSD;
+                            end
+                            effectiveCSDs{i} = n + tStep * (nIn - n)/resTime;
+                        end 
+                    end
+                    
                     if optUseSubCSD
                         gd = GD{i};
                         % Determine next CSD right end location
@@ -251,6 +311,10 @@ classdef pbe_solver < handle
                 m3 = newM3;
                 
                 c = c - sum(deltaMass);
+                if isMSMPR
+                    % TODO use higher order solver scheme.
+                    c = c + tStep * (inConc - c) / resTime;
+                end
             end
             
             % TODO this order affects code generation
@@ -285,7 +349,7 @@ classdef pbe_solver < handle
                 GDs(i) = max(abs(GD{i}));
             end
             
-            shouldEarlyStop = max(GDs) <= obj.options.earlyStopThreshold;
+            shouldEarlyStop = max(GDs) < obj.options.earlyStopThreshold;
         end
       
     end

@@ -229,6 +229,50 @@ classdef test_solver < matlab.perftest.TestCase
             end
             testCase.verifyError(@assign_beta, '');   
         end
+        
+        function test_cstr_wash_away(testCase, solver, useSubCSD)
+            props = parameterized_system_properties();
+            props.snKb = 0;
+            props.pnKp = 0;
+            options = make_options();
+            options.isMSMPR = true;
+            options.earlyStopThreshold = 0;
+            options.useSubCSD = useSubCSD;
+            s = solver(options, props);
+            ic = make_states(props.solubility(60), 0, props);
+            in = make_inputs(60, 300, 0, {0});
+            tSpan = 300;
+            nextState = s.step(ic, in, tSpan);
+            testCase.assertEqual(nextState.conc, ic.conc/exp(1), 'RelTol', 1e-2);
+        end
+        
+        function test_cstr_concentrating(testCase, solver, useSubCSD)
+            props = parameterized_system_properties();
+            props.snKb = 0;
+            props.pnKp = 0;
+            options = make_options();
+            options.isMSMPR = true;
+            options.earlyStopThreshold = 0;
+            options.useSubCSD = useSubCSD;
+            s = solver(options, props);
+            ic = make_states(0, 0, props);
+            in = make_inputs(60, 300, props.solubility(60), {0});
+            tSpan = 300;
+            nextState = s.step(ic, in, tSpan);
+            testCase.assertEqual(nextState.conc, in.inConc * (1-1/exp(1)), 'RelTol', 1e-2);
+        end
+%         function test_default_msmpr(testCase, solver, useSubCSD)
+%             props = parameterized_system_properties();
+%             options = make_options();
+%             options.isMSMPR = true;
+%             options.earlyStopThreshold = 0;
+%             options.useSubCSD = useSubCSD;
+%             s = solver(options, props);
+%             ic = make_states(props.solubility(60), 0, props);
+%             in = make_inputs(25, 600, 0, 0);
+%             tSpan = 500;
+%             nextState = s.step(ic, in, tSpan);
+%         end
     end
 end
 
