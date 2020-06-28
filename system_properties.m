@@ -16,7 +16,7 @@ classdef system_properties
     methods
         % Function to calculate solubility kg solid/kg solvent by passing
         % in temperature in degree C
-        function cStar = solubility_fun(obj, T)
+        function cStar = solubility(obj, T)
         end
         
         % Function to calculate kinetics by passing in the run-time state
